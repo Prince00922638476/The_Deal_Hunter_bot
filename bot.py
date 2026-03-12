@@ -343,10 +343,28 @@ async def main():
     logger.info(f"⏰ Scheduler started — auto-posting every {AUTO_POST_INTERVAL_MINUTES} minutes")
 
     # Start polling (never crashes due to error_callback)
-    await app.run_polling(
+    # --- यहाँ से नीचे वाला सब बदल दीजिये ---
+    logger.info("✅ बोट पोलिंग मोड में जा रहा है...")
+    
+    # हम यहाँ run_polling नहीं इस्तेमाल करेंगे क्योंकि Render को वह पसंद नहीं
+    await app.updater.start_polling(
         allowed_updates=["message"],
         drop_pending_updates=True,
     )
 
+    # बोट को जिंदा रखने के लिए
+    while True:
+        await asyncio.sleep(3600)
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # अगर Render का लूप पहले से चल रहा है
+            loop.create_task(main())
+        else:
+            # अगर आप खुद चला रहे हैं
+            asyncio.run(main())
+    except Exception as e:
+        print(f"बड़ी समस्या आ गई भाई: {e}")
+
