@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from telethon import TelegramClient, events
 from telethon.tl.custom import Button
 import aiohttp
+from aiohttp import web
 
 # ──────────────────────────────────────────────────────────────
 #  CONFIGURATION
@@ -677,9 +678,27 @@ class DealHunterBot:
             log.error(f"Admin notify failed: {e}")
 
 # ──────────────────────────────────────────────────────────────
+async def health(request):
+    return web.Response(text="Bot is Alive!")
+
 async def main():
+    # Render के लिए पोर्ट सेटअप
+    app = web.Application()
+    app.router.add_get("/", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # पोर्ट 10000 का इस्तेमाल
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    
+    # आपका असली बॉट शुरू करना
     bot = DealHunterBot()
     await bot.start()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
