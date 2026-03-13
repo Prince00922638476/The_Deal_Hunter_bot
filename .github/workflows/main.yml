@@ -49,3 +49,4 @@ jobs:
           CUELINKS_KEY:    ${{ secrets.CUELINKS_KEY }}
           FLIPKART_AFFID:  ${{ secrets.FLIPKART_AFFID }}
         run: timeout 20000 python3 bot.py || true
+        
