@@ -23,16 +23,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore session
+      - name: Restore and Convert Session
         env:
           SESSION_STRING: ${{ secrets.SESSION_STRING }}
         run: |
           python3 -c "
-          import os, base64
-          s = os.environ.get('SESSION_STRING','')
-          if s:
-              open('deal_hunter_session.session','wb').write(base64.b64decode(s))
-              print('Session restored ✅')
+          import os
+          try:
+              from telethon.sessions import StringSession, SQLiteSession
+              ss = os.environ.get('SESSION_STRING', '')
+              if ss:
+                  print('String Session mil gayi hai, Database mein convert kar rahe hain...')
+                  string_session = StringSession(ss)
+                  sqlite_session = SQLiteSession('deal_hunter_session')
+                  sqlite_session.set_dc(string_session.dc_id, string_session.server_address, string_session.port)
+                  sqlite_session.auth_key = string_session.auth_key
+                  sqlite_session.save()
+                  print('✅ Session successfully converted to SQLite Database!')
+              else:
+                  print('⚠️ SESSION_STRING secret nahi mila!')
+          except Exception as e:
+              print('❌ Session conversion failed:', e)
           "
 
       - name: 🚀 Run Bot
