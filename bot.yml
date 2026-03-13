@@ -1,0 +1,51 @@
+name: 🤖 Deal Hunter Bot v3.0 — 24/7
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore session
+        env:
+          SESSION_STRING: ${{ secrets.SESSION_STRING }}
+        run: |
+          python3 -c "
+          import os, base64
+          s = os.environ.get('SESSION_STRING','')
+          if s:
+              open('deal_hunter_session.session','wb').write(base64.b64decode(s))
+              print('Session restored ✅')
+          "
+
+      - name: 🚀 Run Bot
+        env:
+          TG_API_ID:       ${{ secrets.TG_API_ID }}
+          TG_API_HASH:     ${{ secrets.TG_API_HASH }}
+          TG_PHONE:        ${{ secrets.TG_PHONE }}
+          BOT_TOKEN:       ${{ secrets.BOT_TOKEN }}
+          MY_CHANNEL:      ${{ secrets.MY_CHANNEL }}
+          ADMIN_ID:        ${{ secrets.ADMIN_ID }}
+          AMAZON_TAG:      ${{ secrets.AMAZON_TAG }}
+          EARNKARO_TOKEN:  ${{ secrets.EARNKARO_TOKEN }}
+          CUELINKS_PID:    ${{ secrets.CUELINKS_PID }}
+          CUELINKS_KEY:    ${{ secrets.CUELINKS_KEY }}
+          FLIPKART_AFFID:  ${{ secrets.FLIPKART_AFFID }}
+        run: timeout 20000 python3 bot.py || true
