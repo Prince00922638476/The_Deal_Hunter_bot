@@ -1,7 +1,7 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
-║         DEAL HUNTER BOT v3.1 - Render Edition               ║
-║   EarnKaro + Cuelinks | Bot Token | Health Check Server     ║
+║       DEAL HUNTER BOT v4.0 - Dual Client Edition            ║
+║  User Client (listen) + Bot Client (post) | Render Ready    ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -12,6 +12,7 @@ import os
 import hashlib
 from datetime import datetime, timedelta
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 from telethon.tl.custom import Button
 from aiohttp import web
 import aiohttp
@@ -20,39 +21,41 @@ import aiohttp
 #  CONFIGURATION
 # ──────────────────────────────────────────────────────────────
 CONFIG = {
-    "API_ID":    int(os.getenv("TG_API_ID", "0")),
-    "API_HASH":  os.getenv("TG_API_HASH", ""),
-    "BOT_TOKEN": os.getenv("BOT_TOKEN", ""),
+    # --- Credentials ---
+    "API_ID":         int(os.getenv("TG_API_ID", "0")),
+    "API_HASH":       os.getenv("TG_API_HASH", ""),
+    "STRING_SESSION": os.getenv("STRING_SESSION", ""),  # User client (source sunne ke liye)
+    "BOT_TOKEN":      os.getenv("BOT_TOKEN", ""),        # Bot client (post karne ke liye)
 
+    # --- Channels ---
     "MY_CHANNEL": os.getenv("MY_CHANNEL", ""),
     "ADMIN_ID":   int(os.getenv("ADMIN_ID", "0")),
 
-    # SOURCE_CHANNELS env mein comma-separated daalo:
-    # e.g. "-1001234567890,@dealsdhamaka,-1009876543210"
+    # SOURCE_CHANNELS: comma-separated, e.g. "-1001234567890,@dealsdhamaka"
     "SOURCE_CHANNELS": [
         (int(ch.strip()) if ch.strip().lstrip('-').isdigit() else ch.strip())
         for ch in os.getenv("SOURCE_CHANNELS", "").split(",")
         if ch.strip()
     ],
 
-    # Affiliate Engines
+    # --- Affiliate ---
     "EARNKARO_TOKEN": os.getenv("EARNKARO_TOKEN", ""),
     "CUELINKS_PID":   os.getenv("CUELINKS_PID", ""),
     "CUELINKS_KEY":   os.getenv("CUELINKS_KEY", ""),
 
-    # Deal Filters
+    # --- Filters ---
     "MIN_PRICE":    1,
     "MAX_PRICE":    50000,
     "MIN_DISCOUNT": 10,
 
-    # Features
+    # --- Features ---
     "USE_BUTTONS":      True,
     "PRICE_COMPARISON": True,
     "EXPIRY_DETECTION": True,
     "DUPLICATE_CHECK":  True,
     "SMART_CLEANER":    True,
 
-    # Render web server port
+    # --- Render ---
     "PORT": int(os.getenv("PORT", "10000")),
 }
 
@@ -68,22 +71,19 @@ log = logging.getLogger(__name__)
 seen_deals = {}
 
 # ──────────────────────────────────────────────────────────────
-#  HEALTH CHECK WEB SERVER (Render ke liye zaroori)
+#  HEALTH CHECK SERVER
 # ──────────────────────────────────────────────────────────────
-async def health_check(request):
-    return web.Response(text="OK", content_type="text/plain")
-
 async def start_web_server():
     app = web.Application()
-    app.router.add_get("/", health_check)
-    app.router.add_get("/health", health_check)
+    app.router.add_get("/", lambda r: web.Response(text="OK"))
+    app.router.add_get("/health", lambda r: web.Response(text="OK"))
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", CONFIG["PORT"]).start()
-    log.info(f"Web server started on port {CONFIG['PORT']}")
+    log.info(f"🌐 Web server: port {CONFIG['PORT']}")
 
 # ──────────────────────────────────────────────────────────────
-#  SMART TEXT CLEANER
+#  SMART CLEANER
 # ──────────────────────────────────────────────────────────────
 UNICODE_FONT_MAP = {}
 for _s, _e, _b in [
@@ -92,7 +92,7 @@ for _s, _e, _b in [
     (0x1D4D0,0x1D4E9,'A'),(0x1D4EA,0x1D503,'a'),(0x1D538,0x1D551,'A'),
     (0x1D552,0x1D56B,'a'),
 ]:
-    for _i,_c in enumerate(range(_s,_e+1)):
+    for _i, _c in enumerate(range(_s, _e+1)):
         UNICODE_FONT_MAP[chr(_c)] = chr(ord(_b)+_i)
 for _i in range(10):
     UNICODE_FONT_MAP[chr(0x1D7CE+_i)] = str(_i)
@@ -119,13 +119,13 @@ def clean_message(text: str) -> str:
 #  PLATFORM DETECTOR
 # ──────────────────────────────────────────────────────────────
 PLATFORM_RULES = {
-    "flipkart": {"patterns": [r'flipkart\.com', r'fkrt\.it'],      "engine": "earnkaro", "fallback": "cuelinks"},
-    "meesho":   {"patterns": [r'meesho\.com'],                      "engine": "earnkaro", "fallback": "cuelinks"},
-    "myntra":   {"patterns": [r'myntra\.com'],                      "engine": "cuelinks", "fallback": "earnkaro"},
-    "nykaa":    {"patterns": [r'nykaa\.com', r'nykaafashion\.com'], "engine": "cuelinks", "fallback": "earnkaro"},
-    "ajio":     {"patterns": [r'ajio\.com'],                        "engine": "cuelinks", "fallback": "earnkaro"},
-    "swiggy":   {"patterns": [r'swiggy\.com'],                      "engine": "cuelinks", "fallback": None},
-    "zomato":   {"patterns": [r'zomato\.com'],                      "engine": "cuelinks", "fallback": None},
+    "flipkart": {"patterns": [r'flipkart\.com', r'fkrt\.it'],       "engine": "earnkaro", "fallback": "cuelinks"},
+    "meesho":   {"patterns": [r'meesho\.com'],                       "engine": "earnkaro", "fallback": "cuelinks"},
+    "myntra":   {"patterns": [r'myntra\.com'],                       "engine": "cuelinks", "fallback": "earnkaro"},
+    "nykaa":    {"patterns": [r'nykaa\.com', r'nykaafashion\.com'],  "engine": "cuelinks", "fallback": "earnkaro"},
+    "ajio":     {"patterns": [r'ajio\.com'],                         "engine": "cuelinks", "fallback": "earnkaro"},
+    "swiggy":   {"patterns": [r'swiggy\.com'],                       "engine": "cuelinks", "fallback": None},
+    "zomato":   {"patterns": [r'zomato\.com'],                       "engine": "cuelinks", "fallback": None},
 }
 
 def detect_platform(url: str) -> tuple:
@@ -138,16 +138,14 @@ def detect_platform(url: str) -> tuple:
 # ──────────────────────────────────────────────────────────────
 #  AFFILIATE ENGINES
 # ──────────────────────────────────────────────────────────────
-async def earnkaro_convert(session: aiohttp.ClientSession, url: str):
+async def earnkaro_convert(session, url):
     token = CONFIG["EARNKARO_TOKEN"]
-    if not token:
-        return None
+    if not token: return None
     try:
         async with session.post(
             "https://api.earnkaro.com/create-link",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={"url": url},
-            timeout=aiohttp.ClientTimeout(total=8)
+            json={"url": url}, timeout=aiohttp.ClientTimeout(total=8)
         ) as resp:
             if resp.status == 200:
                 data = await resp.json()
@@ -156,10 +154,9 @@ async def earnkaro_convert(session: aiohttp.ClientSession, url: str):
         log.warning(f"EarnKaro: {e}")
     return None
 
-async def cuelinks_convert(session: aiohttp.ClientSession, url: str):
+async def cuelinks_convert(session, url):
     pid, key = CONFIG["CUELINKS_PID"], CONFIG["CUELINKS_KEY"]
-    if not pid or not key:
-        return None
+    if not pid or not key: return None
     try:
         async with session.get(
             "https://api.cuelinks.com/v1/link",
@@ -176,15 +173,11 @@ async def cuelinks_convert(session: aiohttp.ClientSession, url: str):
 async def smart_convert(session, url):
     platform, primary, fallback = detect_platform(url)
     converted = None
-    if primary == "earnkaro":
-        converted = await earnkaro_convert(session, url)
-    elif primary == "cuelinks":
-        converted = await cuelinks_convert(session, url)
+    if primary == "earnkaro":   converted = await earnkaro_convert(session, url)
+    elif primary == "cuelinks": converted = await cuelinks_convert(session, url)
     if not converted and fallback:
-        if fallback == "earnkaro":
-            converted = await earnkaro_convert(session, url)
-        elif fallback == "cuelinks":
-            converted = await cuelinks_convert(session, url)
+        if fallback == "earnkaro":   converted = await earnkaro_convert(session, url)
+        elif fallback == "cuelinks": converted = await cuelinks_convert(session, url)
     return (converted or url), platform
 
 async def convert_all_links(session, text):
@@ -194,11 +187,12 @@ async def convert_all_links(session, text):
         new_url, platform = await smart_convert(session, url)
         if new_url != url:
             text = text.replace(url, new_url)
-        link_info.append({"original": url, "converted": new_url, "platform": platform, "changed": new_url != url})
+        link_info.append({"original": url, "converted": new_url,
+                          "platform": platform, "changed": new_url != url})
     return text, link_info
 
 # ──────────────────────────────────────────────────────────────
-#  PRICE EXTRACTOR & VALIDATORS
+#  PRICE & VALIDATORS
 # ──────────────────────────────────────────────────────────────
 def extract_prices(text):
     prices = {"current": None, "original": None, "discount_percent": None, "savings": None}
@@ -207,17 +201,15 @@ def extract_prices(text):
         for m in re.findall(p, text, re.IGNORECASE):
             try:
                 v = int(m.replace(',', ''))
-                if 1 <= v <= 100000:
-                    found.append(v)
+                if 1 <= v <= 100000: found.append(v)
             except: pass
     disc = re.search(r'(\d+)\s*%\s*(?:off|discount|save)', text, re.IGNORECASE)
-    if disc:
-        prices["discount_percent"] = int(disc.group(1))
+    if disc: prices["discount_percent"] = int(disc.group(1))
     if len(found) >= 2:
         found.sort()
         prices.update({"current": found[0], "original": found[-1],
-                        "discount_percent": round((1-found[0]/found[-1])*100),
-                        "savings": found[-1]-found[0]})
+                       "discount_percent": round((1-found[0]/found[-1])*100),
+                       "savings": found[-1]-found[0]})
     elif found:
         prices["current"] = found[0]
     return prices
@@ -225,8 +217,8 @@ def extract_prices(text):
 def is_valid_deal(prices):
     cur, disc = prices.get("current"), prices.get("discount_percent")
     if cur is None: return False, "Price nahi mila"
-    if not (CONFIG["MIN_PRICE"] <= cur <= CONFIG["MAX_PRICE"]): return False, f"Range se bahar"
-    if disc is not None and disc < CONFIG["MIN_DISCOUNT"]: return False, f"Discount kam"
+    if not (CONFIG["MIN_PRICE"] <= cur <= CONFIG["MAX_PRICE"]): return False, "Range se bahar"
+    if disc is not None and disc < CONFIG["MIN_DISCOUNT"]: return False, "Discount kam"
     return True, "OK"
 
 def is_duplicate(text):
@@ -241,14 +233,14 @@ def is_duplicate(text):
 
 def detect_expiry(text):
     if not CONFIG["EXPIRY_DETECTION"]: return ""
-    for k,v in {"today only":"⏰ आज ही खत्म!","flash sale":"⚡ Flash Sale!",
-                "limited stock":"📦 सीमित स्टॉक!","while stock":"📦 सीमित स्टॉक!",
-                "jaldi":"🏃 जल्दी करो!","24 hour":"⏱️ 24 घंटे"}.items():
+    for k, v in {"today only":"⏰ आज ही खत्म!","flash sale":"⚡ Flash Sale!",
+                 "limited stock":"📦 सीमित स्टॉक!","while stock":"📦 सीमित स्टॉक!",
+                 "jaldi":"🏃 जल्दी करो!","24 hour":"⏱️ 24 घंटे"}.items():
         if k in text.lower(): return v
     return ""
 
 # ──────────────────────────────────────────────────────────────
-#  BUTTON BUILDER
+#  BUTTONS
 # ──────────────────────────────────────────────────────────────
 PLABELS = {
     "flipkart":"🛍️ Flipkart पर खरीदो","meesho":"👗 Meesho पर खरीदो",
@@ -267,7 +259,8 @@ def build_buttons(link_info, prices):
         if cur: label += f" @ ₹{cur:,}"
         buttons.append([Button.url(label, info["converted"])])
     if buttons:
-        buttons.append([Button.url("📢 Channel Join करो", f"https://t.me/{CONFIG['MY_CHANNEL'].lstrip('@')}")])
+        buttons.append([Button.url("📢 Channel Join करो",
+                        f"https://t.me/{CONFIG['MY_CHANNEL'].lstrip('@')}")])
     return buttons or None
 
 # ──────────────────────────────────────────────────────────────
@@ -277,71 +270,101 @@ def format_message(cleaned_text, prices, link_info):
     parts = []
     expiry = detect_expiry(cleaned_text)
     if expiry: parts.append(f"*{expiry}*\n")
-
     display = cleaned_text
     if CONFIG["USE_BUTTONS"]:
         display = re.sub(r'https?://[^\s\)\]>\"\'<]+[^\s\)\]>\"\'<.,!?]', '', display).strip()
         display = re.sub(r'\n{3,}', '\n\n', display)
     parts.append(display)
-
     cur = prices.get("current")
     if cur and CONFIG["PRICE_COMPARISON"]:
         card = ["\n💰 *Price Analysis*", f"├ Current: ₹{cur:,}"]
-        if prices.get("original"):    card.append(f"├ MRP: ~~₹{prices['original']:,}~~")
+        if prices.get("original"):         card.append(f"├ MRP: ~~₹{prices['original']:,}~~")
         if prices.get("discount_percent"): card.append(f"├ Discount: *{prices['discount_percent']}% OFF* 🔥")
-        if prices.get("savings"):     card.append(f"└ बचत: *₹{prices['savings']:,}* 💚")
+        if prices.get("savings"):          card.append(f"└ बचत: *₹{prices['savings']:,}* 💚")
         parts.append("\n".join(card))
-
     msg = "\n".join(parts)
     return msg[:4000] if len(msg) > 4000 else msg
 
 # ──────────────────────────────────────────────────────────────
-#  MAIN BOT
+#  MAIN BOT — DUAL CLIENT
 # ──────────────────────────────────────────────────────────────
 class DealHunterBot:
     def __init__(self):
-        self.client = TelegramClient('deal_hunter_session', CONFIG["API_ID"], CONFIG["API_HASH"])
-        self.stats = {"processed":0,"posted":0,"filtered":0,"duplicates":0,
-                      "earnkaro":0,"cuelinks":0,"start_time":datetime.now()}
+        # ✅ Client 1: User account — source channels SUNNE ke liye
+        self.user_client = TelegramClient(
+            StringSession(CONFIG["STRING_SESSION"]),
+            CONFIG["API_ID"],
+            CONFIG["API_HASH"]
+        )
+        # ✅ Client 2: Bot account — channel mein POST karne ke liye
+        self.bot_client = TelegramClient(
+            "bot_session",
+            CONFIG["API_ID"],
+            CONFIG["API_HASH"]
+        )
+        self.stats = {
+            "processed": 0, "posted": 0, "filtered": 0,
+            "duplicates": 0, "earnkaro": 0, "cuelinks": 0,
+            "start_time": datetime.now()
+        }
         self.paused = False
         self.http = None
 
     async def start(self):
-        # ✅ Web server PEHLE start karo
+        # Step 1: Web server sabse pehle
         await start_web_server()
 
+        # Step 2: HTTP session
         self.http = aiohttp.ClientSession()
 
-        # ✅ Bot Token se login (phone nahi)
-        await self.client.start(bot_token=CONFIG["BOT_TOKEN"])
-        log.info("✅ Deal Hunter Bot v3.1 Started!")
+        # Step 3: Dono clients connect karo
+        await self.user_client.start()
+        log.info("✅ User client connected (listening to source channels)")
 
+        await self.bot_client.start(bot_token=CONFIG["BOT_TOKEN"])
+        log.info("✅ Bot client connected (posting to channel)")
+
+        # Step 4: Handlers register karo
+        self.register_handlers()
+
+        # Step 5: Admin ko notify karo
         engines = []
         if CONFIG["EARNKARO_TOKEN"]: engines.append("EarnKaro ✅")
         if CONFIG["CUELINKS_PID"]:   engines.append("Cuelinks ✅")
-        if not engines:               engines.append("Koi engine configure nahi")
+        if not engines:               engines.append("No affiliate")
 
+        channels_count = len(CONFIG["SOURCE_CHANNELS"])
         await self.notify_admin(
-            f"🤖 *Deal Hunter Bot v3.1 — Live on Render!*\n\n"
+            f"🤖 *Deal Hunter Bot v4.0 — Live!*\n\n"
+            f"👤 User Client: ✅ (source channels sun raha hai)\n"
+            f"🤖 Bot Client: ✅ (channel mein post kar raha hai)\n"
             f"⚡ Engines: {' | '.join(engines)}\n"
-            f"📡 Channels: {len(CONFIG['SOURCE_CHANNELS'])}\n"
+            f"📡 Source Channels: {channels_count}\n"
             f"💰 Filter: ₹{CONFIG['MIN_PRICE']}–₹{CONFIG['MAX_PRICE']}\n"
+            f"🏷️ Min Discount: {CONFIG['MIN_DISCOUNT']}%\n"
             f"⏰ {datetime.now().strftime('%d/%m %H:%M')}"
         )
 
-        self.register_handlers()
-        await self.client.run_until_disconnected()
+        log.info(f"🎯 Monitoring {channels_count} source channels...")
+
+        # Step 6: Dono clients run karo simultaneously
+        await asyncio.gather(
+            self.user_client.run_until_disconnected(),
+            self.bot_client.run_until_disconnected(),
+        )
 
     def register_handlers(self):
-        @self.client.on(events.NewMessage(chats=CONFIG["SOURCE_CHANNELS"]))
+        # User client se source channels listen karo
+        @self.user_client.on(events.NewMessage(chats=CONFIG["SOURCE_CHANNELS"]))
         async def on_deal(event):
             if not self.paused:
                 try:
                     await self.process_deal(event.message)
                 except Exception as e:
-                    log.error(f"Handler error (bot nahi rukega): {e}")
+                    log.error(f"Deal handler error (bot nahi rukega): {e}")
 
-        @self.client.on(events.NewMessage(from_users=CONFIG["ADMIN_ID"]))
+        # Bot client se admin commands suno
+        @self.bot_client.on(events.NewMessage(from_users=CONFIG["ADMIN_ID"]))
         async def on_admin(event):
             try:
                 await self.handle_admin(event)
@@ -354,6 +377,7 @@ class DealHunterBot:
             if not raw or len(raw) < 20: return
 
             self.stats["processed"] += 1
+
             if is_duplicate(raw):
                 self.stats["duplicates"] += 1
                 return
@@ -369,7 +393,7 @@ class DealHunterBot:
 
             for info in link_info:
                 if info["changed"]:
-                    if info["platform"] in ("flipkart","meesho"): self.stats["earnkaro"] += 1
+                    if info["platform"] in ("flipkart", "meesho"): self.stats["earnkaro"] += 1
                     else: self.stats["cuelinks"] += 1
 
             final_msg = format_message(converted_text, prices, link_info)
@@ -377,17 +401,21 @@ class DealHunterBot:
             kwargs = {"parse_mode": "md"}
             if buttons: kwargs["buttons"] = buttons
 
+            # ✅ Bot client se post karo (user client nahi)
             if message.photo:
-                await self.client.send_message(CONFIG["MY_CHANNEL"], final_msg, file=message.photo, **kwargs)
+                await self.bot_client.send_message(
+                    CONFIG["MY_CHANNEL"], final_msg, file=message.photo, **kwargs)
             else:
-                await self.client.send_message(CONFIG["MY_CHANNEL"], final_msg, **kwargs)
+                await self.bot_client.send_message(
+                    CONFIG["MY_CHANNEL"], final_msg, **kwargs)
 
             self.stats["posted"] += 1
-            log.info(f"✅ Posted | ₹{prices.get('current','?')} | {prices.get('discount_percent','?')}% off")
+            log.info(f"✅ Posted | ₹{prices.get('current','?')} | "
+                     f"{prices.get('discount_percent','?')}% off")
             await asyncio.sleep(2)
 
         except Exception as e:
-            log.error(f"Error: {e}", exc_info=True)
+            log.error(f"process_deal error: {e}", exc_info=True)
 
     async def handle_admin(self, event):
         cmd = event.text.strip().lower()
@@ -397,36 +425,54 @@ class DealHunterBot:
             m = int((up.total_seconds()%3600)//60)
             total = max(self.stats["processed"], 1)
             await event.respond(
-                f"📊 *Stats*\n\n⏱️ {h}h {m}m\n"
-                f"📥 Processed: {self.stats['processed']}\n✅ Posted: {self.stats['posted']}\n"
-                f"❌ Filtered: {self.stats['filtered']}\n🔄 Duplicates: {self.stats['duplicates']}\n"
-                f"🔗 EarnKaro: {self.stats['earnkaro']}\n🔗 Cuelinks: {self.stats['cuelinks']}\n"
-                f"📈 Rate: {round(self.stats['posted']/total*100)}%", parse_mode='md')
+                f"📊 *Deal Hunter Bot v4.0*\n\n"
+                f"⏱️ Uptime: {h}h {m}m\n"
+                f"📥 Processed: {self.stats['processed']}\n"
+                f"✅ Posted: {self.stats['posted']}\n"
+                f"❌ Filtered: {self.stats['filtered']}\n"
+                f"🔄 Duplicates: {self.stats['duplicates']}\n"
+                f"🔗 EarnKaro: {self.stats['earnkaro']}\n"
+                f"🔗 Cuelinks: {self.stats['cuelinks']}\n"
+                f"📈 Rate: {round(self.stats['posted']/total*100)}%",
+                parse_mode='md')
         elif cmd.startswith("/post "):
-            await self.client.send_message(CONFIG["MY_CHANNEL"], event.text[6:], parse_mode='md')
+            await self.bot_client.send_message(
+                CONFIG["MY_CHANNEL"], event.text[6:], parse_mode='md')
             await event.respond("✅ Posted!")
         elif cmd == "/pause":
             self.paused = True
-            await event.respond("⏸️ Paused.")
+            await event.respond("⏸️ Bot paused.")
         elif cmd == "/resume":
             self.paused = False
-            await event.respond("▶️ Resumed!")
+            await event.respond("▶️ Bot resumed!")
         elif cmd == "/status":
             await event.respond(
                 f"{'⏸️ PAUSED' if self.paused else '🟢 Running'}\n"
+                f"👤 User Client: ✅\n🤖 Bot Client: ✅\n"
+                f"📡 Channels: {len(CONFIG['SOURCE_CHANNELS'])}\n"
                 f"EarnKaro: {'✅' if CONFIG['EARNKARO_TOKEN'] else '❌'}\n"
-                f"Cuelinks: {'✅' if CONFIG['CUELINKS_PID'] else '❌'}", parse_mode='md')
+                f"Cuelinks: {'✅' if CONFIG['CUELINKS_PID'] else '❌'}",
+                parse_mode='md')
         elif cmd == "/help":
             await event.respond(
-                "🤖 *Commands*\n/stats /status /pause /resume\n/post <msg> /help", parse_mode='md')
+                "🤖 *Commands v4.0*\n\n"
+                "/stats — Statistics\n"
+                "/status — Bot status\n"
+                "/post <msg> — Manual post\n"
+                "/pause — Pause\n"
+                "/resume — Resume\n"
+                "/help — Yeh list",
+                parse_mode='md')
 
     async def notify_admin(self, msg):
         try:
             if CONFIG["ADMIN_ID"]:
-                await self.client.send_message(CONFIG["ADMIN_ID"], msg, parse_mode='md')
+                await self.bot_client.send_message(
+                    CONFIG["ADMIN_ID"], msg, parse_mode='md')
         except Exception as e:
             log.error(f"Notify failed: {e}")
 
+# ──────────────────────────────────────────────────────────────
 async def main():
     bot = DealHunterBot()
     await bot.start()
