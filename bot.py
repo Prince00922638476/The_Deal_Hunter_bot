@@ -490,7 +490,7 @@ class DealHunterBot:
 
     async def start(self):
         self.http = aiohttp.ClientSession()
-        await self.client.start(phone=CONFIG["PHONE"])
+        await self.client.start(bot_token=CONFIG["BOT_TOKEN"])
         log.info("✅ Deal Hunter Bot v3.0 Started!")
 
         engines = []
